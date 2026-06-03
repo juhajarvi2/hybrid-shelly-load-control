@@ -1,0 +1,104 @@
+# ============================================================
+# Pörssäri-ohjaus ja lattian palautus
+# ============================================================
+# Lisää nämä automaatiot Home Assistantin automations.yaml-tiedostoon.
+# Vaatii porssari_core.yaml-integraation (ks. README).
+#
+# Entity-ID:t (korvaa xxxxxxxxxxxx ja yyyyyyyyyyyy omilla laitetunnuksillasi):
+#   sensor.porssari_channel_1_state          Pörssäri: varaaja (0/1)
+#   sensor.porssari_channel_2_state          Pörssäri: lattia (0/1)
+#   switch.shellypro2_xxxxxxxxxxxx_output_0   Vesivaraaja
+#   switch.shellypro2_xxxxxxxxxxxx_output_1   Lattialämmitys
+#   sensor.shellypro3em_yyyyyyyyyyyy_phase_a/b/c_teho  Vaihekohtaiset tehot
+# ============================================================
+
+- alias: "Pörssäri – Varaaja ohjaus"
+  description: "Kytkee vesivaraajan pörssärisensorin mukaan"
+  triggers:
+    - trigger: state
+      entity_id: sensor.porssari_channel_1_state
+      to: "1"
+      id: kytke_paalle
+    - trigger: state
+      entity_id: sensor.porssari_channel_1_state
+      to: "0"
+      id: kytke_pois
+  conditions: []
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: kytke_paalle
+          sequence:
+            - action: switch.turn_on
+              target:
+                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_0
+        - conditions:
+            - condition: trigger
+              id: kytke_pois
+          sequence:
+            - action: switch.turn_off
+              target:
+                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_0
+  mode: single
+
+- alias: "Pörssäri – Lattia ohjaus"
+  description: "Kytkee lattialämmityksen pörssärisensorin mukaan"
+  triggers:
+    - trigger: state
+      entity_id: sensor.porssari_channel_2_state
+      to: "1"
+      id: kytke_paalle
+    - trigger: state
+      entity_id: sensor.porssari_channel_2_state
+      to: "0"
+      id: kytke_pois
+  conditions: []
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: kytke_paalle
+          sequence:
+            - action: switch.turn_on
+              target:
+                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+        - conditions:
+            - condition: trigger
+              id: kytke_pois
+          sequence:
+            - action: switch.turn_off
+              target:
+                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+  mode: single
+
+- alias: "Pörssäri – Lattian palautus turvakatkon jälkeen"
+  description: >
+    Palauttaa lattian, jos turvalogiikka on sammuttanut sen mutta pörssäri
+    haluaa sen yhä päälle ja vaihekuorma on laskenut turvalliselle tasolle.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/15"
+  conditions:
+    - condition: state
+      entity_id: sensor.porssari_channel_2_state
+      state: "1"
+    - condition: state
+      entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+      state: "off"
+      for:
+        minutes: 5
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_a_teho
+      below: 4000
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_b_teho
+      below: 4000
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_c_teho
+      below: 4000
+  actions:
+    - action: switch.turn_on
+      target:
+        entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+  mode: single
