@@ -1,0 +1,63 @@
+# ============================================================
+# Ilmastointi lämpötilan mukaan (Mitsubishi)
+# ------------------------------------------------------------
+# Cool päälle yli 25 °C, heat takaisin alle 24 °C.
+# Ei jäähdytetä jos takka on päällä (input_boolean.takka_paalla).
+#
+# TÄYTÄ OMAT ARVOSI (löytyvät HA:n laite-/entiteettisivuilta):
+#   <SENSOR_DEVICE_ID>   = lämpötila-anturin device_id
+#   <SENSOR_ENTITY_ID>   = lämpötila-anturin entity_id (sensor)
+#   <CLIMATE_DEVICE_ID>  = ilmastointilaitteen device_id
+#   <CLIMATE_ENTITY_ID>  = ilmastointilaitteen entity_id (climate)
+# ============================================================
+
+- alias: "Ilmastointi lämpötilan mukaan"
+  description: "Cool päälle yli 25 °C, heat takaisin alle 24 °C, ei jäähdytetä jos takka päällä"
+  triggers:
+    - type: temperature
+      device_id: <SENSOR_DEVICE_ID>
+      entity_id: <SENSOR_ENTITY_ID>
+      domain: sensor
+      trigger: device
+      above: 25
+      id: liian_kuuma
+    - type: temperature
+      device_id: <SENSOR_DEVICE_ID>
+      entity_id: <SENSOR_ENTITY_ID>
+      domain: sensor
+      trigger: device
+      below: 24
+      id: tarpeeksi_viilea
+  conditions: []
+  actions:
+    - choose:
+        # Liian kuuma JA takka pois -> jäähdytys päälle
+        - conditions:
+            - condition: trigger
+              id: liian_kuuma
+            - condition: state
+              entity_id: input_boolean.takka_paalla
+              state: "off"
+          sequence:
+            - device_id: <CLIMATE_DEVICE_ID>
+              domain: climate
+              entity_id: <CLIMATE_ENTITY_ID>
+              type: set_hvac_mode
+              hvac_mode: cool
+        # Tarpeeksi viileä JA AC oli jäähdytyksellä -> takaisin lämmitykseen
+        - conditions:
+            - condition: trigger
+              id: tarpeeksi_viilea
+            - condition: device
+              device_id: <CLIMATE_DEVICE_ID>
+              domain: climate
+              entity_id: <CLIMATE_ENTITY_ID>
+              type: is_hvac_mode
+              hvac_mode: cool
+          sequence:
+            - device_id: <CLIMATE_DEVICE_ID>
+              domain: climate
+              entity_id: <CLIMATE_ENTITY_ID>
+              type: set_hvac_mode
+              hvac_mode: heat
+  mode: single
