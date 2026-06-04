@@ -1,0 +1,52 @@
+# ============================================================
+# Telegram-ilmoitukset – Shelly Pro 2 -kuormien tila
+# ------------------------------------------------------------
+# Ilmoittaa Telegramiin aina kun vesivaraaja tai lattialämmitys
+# kytkeytyy päälle / pois.
+#
+# TÄYTÄ OMAT ARVOSI:
+#   <TELEGRAM_NOTIFIER>  = oma Telegram notify -entiteettisi
+#                          (esim. notify.telegram_oma_botti)
+#   <SHELLY_MAC>         = Shelly Pro 2:n MAC pienin kirjaimin
+#                          (esim. a1b2c3d4e5f6)
+# ============================================================
+
+- alias: "Telegram – Vesivaraajan tila"
+  description: "Ilmoittaa Telegramiin kun vesivaraaja (output_0) kytkeytyy päälle/pois"
+  triggers:
+    - trigger: state
+      entity_id:
+        - switch.shellypro2_<SHELLY_MAC>_output_0
+  conditions: []
+  actions:
+    - action: telegram_bot.send_message
+      data:
+        entity_id:
+          - notify.<TELEGRAM_NOTIFIER>
+        message: >
+          Vesivaraaja on nyt {{ 'päällä' if
+          is_state('switch.shellypro2_<SHELLY_MAC>_output_0', 'on') else 'pois' if
+          is_state('switch.shellypro2_<SHELLY_MAC>_output_0', 'off') else
+          'yhteysvirhe' }}.
+  mode: queued
+  max: 5
+
+- alias: "Telegram – Lattialämmityksen tila"
+  description: "Ilmoittaa Telegramiin kun lattialämmitys (output_1) kytkeytyy päälle/pois"
+  triggers:
+    - trigger: state
+      entity_id:
+        - switch.shellypro2_<SHELLY_MAC>_output_1
+  conditions: []
+  actions:
+    - action: telegram_bot.send_message
+      data:
+        entity_id:
+          - notify.<TELEGRAM_NOTIFIER>
+        message: >
+          Lattialämmitys on nyt {{ 'päällä' if
+          is_state('switch.shellypro2_<SHELLY_MAC>_output_1', 'on') else 'pois' if
+          is_state('switch.shellypro2_<SHELLY_MAC>_output_1', 'off') else
+          'yhteysvirhe' }}.
+  mode: queued
+  max: 5
