@@ -1,19 +1,193 @@
 # ============================================================
-# Pörssäri-ohjaus ja lattian palautus
-# ============================================================
-# Lisää nämä automaatiot Home Assistantin automations.yaml-tiedostoon.
-# Vaatii porssari_core.yaml-integraation (ks. README).
+# Home Assistant – automaatiot
+# Shelly Pro 2 (varaaja = output_0, lattia = output_1)
+# Shelly Pro 3 EM (192.168.3.27, MAC 14335cc59f6c) mittaus
 #
-# Entity-ID:t (korvaa xxxxxxxxxxxx ja yyyyyyyyyyyy omilla laitetunnuksillasi):
-#   sensor.porssari_channel_1_state          Pörssäri: varaaja (0/1)
-#   sensor.porssari_channel_2_state          Pörssäri: lattia (0/1)
-#   switch.shellypro2_xxxxxxxxxxxx_output_0   Vesivaraaja
-#   switch.shellypro2_xxxxxxxxxxxx_output_1   Lattialämmitys
-#   sensor.shellypro3em_yyyyyyyyyyyy_phase_a/b/c_teho  Vaihekohtaiset tehot
+# Kuormanohjauksen kokonaisuus:
+#   - Shelly-skripti (aurinko-ohjaus.js) hoitaa aurinko-ohjauksen,
+#     ilta-/aamunollauksen ja absoluuttisen turvarajan (5750 W/vaihe)
+#   - Pörssäri (HA) kytkee kuormat halvoille tunneille (22:00–07:00)
+#   - Palautusautomaatiot kytkevät kuorman takaisin, jos turvalogiikka
+#     sammutti sen mutta pörssäri haluaa sen yhä päälle ja vaihekuorma
+#     on laskenut turvalliselle tasolle
+#
+# Palautusrajat ovat kuormakohtaiset (per vaihe):
+#   varaaja < 4500 W  (varaaja lisää ~1 kW/vaihe → 5750−1000−250)
+#   lattia  < 4000 W  (lattia lisää ~2,5 kW/vaihe; raja pitää
+#                      huippukuorman turvarajan tuntumassa)
 # ============================================================
 
-- alias: "Pörssäri – Varaaja ohjaus"
-  description: "Kytkee vesivaraajan pörssärisensorin mukaan"
+- id: "1774072057097"
+  alias: Viesti
+  description: ""
+  triggers:
+    - trigger: state
+      entity_id:
+        - switch.shellypro2_ec626088bcb0_output_0
+        - switch.shellypro2_ec626088bcb0_output_1
+  conditions: []
+  actions:
+    - action: telegram_bot.send_message
+      metadata: {}
+      data:
+        message:
+          "{{ trigger.to_state.attributes.friendly_name }} on nyt {{ trigger.to_state.state
+          }}"
+  mode: single
+
+- id: "1774541995478"
+  alias: Lattia_pois
+  description: ""
+  triggers:
+    - device_id: b398d0ce8be7c0c43f1120abded60100
+      domain: climate
+      entity_id: bb4e5c03484c9fed9ae1929412494406
+      type: hvac_mode_changed
+      trigger: device
+      to: cool
+  conditions: []
+  actions:
+    - type: turn_off
+      device_id: f759a795c1e044e94db06f84ff016e61
+      entity_id: 4a94c59c08d1fd33b85e3553cc6b53bc
+      domain: switch
+  mode: single
+
+- id: "1774553175506"
+  alias: Lattia_pois_automaatio_loppuu
+  description: ""
+  triggers:
+    - device_id: b398d0ce8be7c0c43f1120abded60100
+      domain: climate
+      entity_id: bb4e5c03484c9fed9ae1929412494406
+      type: hvac_mode_changed
+      trigger: device
+      to: heat
+  conditions: []
+  actions:
+    - type: turn_on
+      device_id: f759a795c1e044e94db06f84ff016e61
+      entity_id: 4a94c59c08d1fd33b85e3553cc6b53bc
+      domain: switch
+  mode: single
+
+- id: "1774641492197"
+  alias: Uusi automaatio_varaaja
+  description: ""
+  triggers:
+    - trigger: state
+      entity_id:
+        - switch.shellypro2_ec626088bcb0_output_0
+  conditions: []
+  actions:
+    - action: telegram_bot.send_message
+      data:
+        entity_id:
+          - notify.shelly_juha_jarvi_8260789652
+        message:
+          "Vesivaraaja: {{ 'päällä' if is_state('switch.shellypro2_ec626088bcb0_output_0',
+          'on') else 'pois' if is_state('switch.shellypro2_ec626088bcb0_output_0',
+          'off') else 'yhteysvirhe' }}.
+
+          "
+  mode: queued
+  max: 5
+
+- id: "1774641682164"
+  alias: Uusi automaatio_lattia
+  description: ""
+  triggers:
+    - trigger: state
+      entity_id:
+        - switch.shellypro2_ec626088bcb0_output_1
+  conditions: []
+  actions:
+    - action: telegram_bot.send_message
+      data:
+        entity_id:
+          - notify.shelly_juha_jarvi_8260789652
+        message:
+          "Lattialämmitys: {{ 'päällä' if is_state('switch.shellypro2_ec626088bcb0_output_1',
+          'on') else 'pois' if is_state('switch.shellypro2_ec626088bcb0_output_1',
+          'off') else 'yhteysvirhe' }}.
+
+          "
+  mode: queued
+  max: 5
+
+- id: "1777130993923"
+  alias: Ilmastointi_lämpötilan_mukaan
+  description:
+    Cool päälle yli 25°C, heat takaisin alle 24°C, ei jäähdytetä jos takka
+    päällä
+  triggers:
+    - type: temperature
+      device_id: f07399bec9a50f4d1c4f9e170164132a
+      entity_id: 26e633682250e17529fbca893b9be50c
+      domain: sensor
+      trigger: device
+      above: 25
+      for:
+        minutes: 3
+      id: liian_kuuma
+    - type: temperature
+      device_id: f07399bec9a50f4d1c4f9e170164132a
+      entity_id: 26e633682250e17529fbca893b9be50c
+      domain: sensor
+      trigger: device
+      below: 24
+      for:
+        minutes: 3
+      id: tarpeeksi_viilea
+  conditions: []
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: liian_kuuma
+            - condition: state
+              entity_id: input_boolean.takka_paalla
+              state: "off"
+          sequence:
+            - device_id: b398d0ce8be7c0c43f1120abded60100
+              domain: climate
+              entity_id: bb4e5c03484c9fed9ae1929412494406
+              type: set_hvac_mode
+              hvac_mode: cool
+            - action: telegram_bot.send_message
+              data:
+                entity_id:
+                  - notify.mitsubishi_juha_jarvi
+                message: "Jäähdytys päälle: olohuone ylitti 25°C.
+
+                  "
+        - conditions:
+            - condition: trigger
+              id: tarpeeksi_viilea
+            - condition: device
+              device_id: b398d0ce8be7c0c43f1120abded60100
+              domain: climate
+              entity_id: bb4e5c03484c9fed9ae1929412494406
+              type: is_hvac_mode
+              hvac_mode: cool
+          sequence:
+            - device_id: b398d0ce8be7c0c43f1120abded60100
+              domain: climate
+              entity_id: bb4e5c03484c9fed9ae1929412494406
+              type: set_hvac_mode
+              hvac_mode: heat
+            - action: telegram_bot.send_message
+              data:
+                entity_id:
+                  - notify.mitsubishi_juha_jarvi
+                message: "Lämmitys takaisin: olohuone alitti 24°C.
+
+                  "
+  mode: single
+
+- id: cbfa449374f547f7911ef9b6a85175bb
+  alias: Pörssäri HA - Varaaja ohjaus
+  description: Ohjaa Shelly Pro 2 output 0 (varaaja) HA:n pörssäri-sensorin perusteella
   triggers:
     - trigger: state
       entity_id: sensor.porssari_channel_1_state
@@ -32,18 +206,19 @@
           sequence:
             - action: switch.turn_on
               target:
-                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_0
+                entity_id: switch.shellypro2_ec626088bcb0_output_0
         - conditions:
             - condition: trigger
               id: kytke_pois
           sequence:
             - action: switch.turn_off
               target:
-                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_0
+                entity_id: switch.shellypro2_ec626088bcb0_output_0
   mode: single
 
-- alias: "Pörssäri – Lattia ohjaus"
-  description: "Kytkee lattialämmityksen pörssärisensorin mukaan"
+- id: 87c4a2cc058943bdb34d7197793d5427
+  alias: Pörssäri HA - Lattia ohjaus
+  description: Ohjaa Shelly Pro 2 output 1 (lattia) HA:n pörssäri-sensorin perusteella
   triggers:
     - trigger: state
       entity_id: sensor.porssari_channel_2_state
@@ -62,20 +237,19 @@
           sequence:
             - action: switch.turn_on
               target:
-                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+                entity_id: switch.shellypro2_ec626088bcb0_output_1
         - conditions:
             - condition: trigger
               id: kytke_pois
           sequence:
             - action: switch.turn_off
               target:
-                entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+                entity_id: switch.shellypro2_ec626088bcb0_output_1
   mode: single
 
-- alias: "Pörssäri – Lattian palautus turvakatkon jälkeen"
-  description: >
-    Palauttaa lattian, jos turvalogiikka on sammuttanut sen mutta pörssäri
-    haluaa sen yhä päälle ja vaihekuorma on laskenut turvalliselle tasolle.
+- id: 1d583d7301e34500bb09f53244f72cb4
+  alias: Pörssäri HA - Lattia palautus Elenia-suojan jälkeen
+  description: Palauttaa lattian jos suoja sammutti sen mutta pörssäri haluaa sen yhä päällä ja vaihe on vapautunut
   triggers:
     - trigger: time_pattern
       minutes: "/15"
@@ -84,21 +258,55 @@
       entity_id: sensor.porssari_channel_2_state
       state: "1"
     - condition: state
-      entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+      entity_id: switch.shellypro2_ec626088bcb0_output_1
       state: "off"
       for:
         minutes: 5
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_a_teho
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_a_teho
       below: 4000
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_b_teho
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_b_teho
       below: 4000
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_yyyyyyyyyyyy_phase_c_teho
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_c_teho
       below: 4000
   actions:
     - action: switch.turn_on
       target:
-        entity_id: switch.shellypro2_xxxxxxxxxxxx_output_1
+        entity_id: switch.shellypro2_ec626088bcb0_output_1
+  mode: single
+
+- id: 7020ee9454a14a7fb98315907c55399a
+  alias: Pörssäri – Varaajan palautus turvakatkon jälkeen
+  description: >
+    Palauttaa varaajan, jos turvalogiikka on sammuttanut sen mutta pörssäri
+    haluaa sen yhä päälle ja vaihekuorma on laskenut turvalliselle tasolle.
+    Varaaja on prioriteettikuorma (lämmin vesi), joten palautusraja on
+    korkeampi kuin lattialla: varaaja lisää vain ~1 kW/vaihe.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/15"
+  conditions:
+    - condition: state
+      entity_id: sensor.porssari_channel_1_state
+      state: "1"
+    - condition: state
+      entity_id: switch.shellypro2_ec626088bcb0_output_0
+      state: "off"
+      for:
+        minutes: 5
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_a_teho
+      below: 4500
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_b_teho
+      below: 4500
+    - condition: numeric_state
+      entity_id: sensor.shellypro3em_14335cc59f6c_phase_c_teho
+      below: 4500
+  actions:
+    - action: switch.turn_on
+      target:
+        entity_id: switch.shellypro2_ec626088bcb0_output_0
   mode: single
