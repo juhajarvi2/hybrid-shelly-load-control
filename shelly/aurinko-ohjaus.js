@@ -1,5 +1,5 @@
 // ============================================================
-// Shelly Pro 2 – Aurinko-ohjaus + turvalogiikka
+// Shelly Pro 2 – Aurinko-ohjaus + turvalogiikka (v3, yksi mittaus)
 // ============================================================
 //
 // Hallinnoi vesivaraajaa (output 0) ja lattialämmitystä (output 1):
@@ -7,19 +7,34 @@
 //   - Iltanollaus klo 21:45 (kuormat pois ennen pörssäriaikaa)
 //   - Turvalogiikka 24/7 (vaihekohtainen siirtoraja)
 //
-// Yöaikaan (22:00–07:00) skripti on passiivinen ja hoitaa vain
-// turvavalvontaa – varsinainen pörssäriohjaus tulee Home Assistantilta.
+// Muutos v2 -> v3: poistettu kuollut "ennakoiva yöraja" -haara
+// (YO_YLIKUORMA == VAIHE_TEHORAJA, joten siirtoraja tarkisti sen
+// jo ensin; haara ei koskaan lauennut). Yöajan ylikuorman hoitaa
+// absoluuttinen VAIHE_TEHORAJA + HA:n palautusautomaatioiden
+// kuormakohtaiset rajat.
+//
+// Muutos v1 -> v2: aiemmin kaksi 30 s timeria (turvaValvonta +
+// aurinkoOhjaus) tekivät kumpikin oman HTTP-kyselyn 3EM:lle
+// käytännössä samanaikaisesti. Nyt yksi timer ja YKSI mittaus
+// per kierros palvelee sekä turvalogiikkaa että aurinko-ohjausta.
+// Ohjauslogiikka, rajat ja aikaikkunat ovat identtiset v1:n kanssa.
+//
+// Suoritusjärjestys joka kierroksella:
+//   1. Aikasiirtymät (ilta-/aamunollaus) – eivät tarvitse mittaria,
+//      toimivat siis myös mittarivian aikana
+//   2. Mittaus (EM.GetStatus, 1 kpl)
+//   3. Turvalogiikka ENSIN: absoluuttinen siirtoraja (VAIHE_TEHORAJA)
+//   4. Aurinko-ohjaus vain jos turvalogiikka ei puuttunut peliin
 //
 // Mittaus: Shelly Pro 3 EM (HTTP-rajapinta EM.GetStatus)
 // ============================================================
 
-// --- ASETUKSET ---
+// --- ASETUKSET (identtiset v1:n kanssa) ---
 var MITTARIN_IP   = "192.168.X.X";    // Shelly Pro 3 EM:n IP – muokkaa omaksesi
 var VARAAJA       = 0;                 // Vesivaraajan output
 var LATTIA        = 1;                 // Lattialämmityksen output
 
 var VAIHE_TEHORAJA  = 5750;   // Absoluuttinen vaiheraja (W)
-var YO_YLIKUORMA    = 5750;   // Ennakoiva yöraja (W)
 
 var AURINKO_RAJA_V  = -3000;  // Varaajan käynnistys (W, neg. = verkkoon syöttö)
 var AURINKO_RAJA_L  = -5000;  // Lattian käynnistys (W)
@@ -42,7 +57,7 @@ var aamunollausTehty = false;
 var viimeinenPaiva   = -1;
 
 // ============================================================
-// APUFUNKTIOT
+// APUFUNKTIOT (identtiset v1:n kanssa)
 // ============================================================
 function nytMinuutteina() {
     var nyt = new Date();
@@ -51,11 +66,6 @@ function nytMinuutteina() {
 
 function nytPaiva() {
     return new Date().getDate();
-}
-
-function onPorssariAika() {
-    var min = nytMinuutteina();
-    return (min >= PORSSARI_ALKU_MIN || min < PORSSARI_LOPPU_MIN);
 }
 
 function voiKaynnistaaAuringolla() {
@@ -99,51 +109,17 @@ function tarkistaPaivanVaihto() {
 }
 
 // ============================================================
-// TURVAVALVONTA – 30 s välein, aina käynnissä
+// PÄÄSILMUKKA – 30 s välein, yksi mittaus per kierros
 // ============================================================
-function turvaValvonta() {
-    var tilat = haeTilat();
-    if (!tilat) return;
-
-    Shelly.call("HTTP.GET", { url: "http://" + MITTARIN_IP + "/rpc/EM.GetStatus?id=0" },
-    function(res, err) {
-        if (err !== 0 || !res || res.code !== 200) {
-            mittariVirheet++;
-            print("Mittarivirhe " + mittariVirheet + "/" + MAX_VIRHEET);
-            if (mittariVirheet >= MAX_VIRHEET) sammutaKaikki("Mittari ei vastaa");
-            return;
-        }
-        mittariVirheet = 0;
-        var data = JSON.parse(res.body);
-        var maxV = Math.max(data.a_act_power, data.b_act_power, data.c_act_power);
-
-        logitaMuutos(tilat);
-
-        // Siirtoraja: lattia ensin pois (varaaja jää lämmittämään vettä)
-        if (maxV > VAIHE_TEHORAJA) {
-            if (tilat.lattia)        asetaKuorma(LATTIA,  false, "Siirtoraja " + Math.round(maxV) + "W");
-            else if (tilat.varaaja)  asetaKuorma(VARAAJA, false, "Siirtoraja " + Math.round(maxV) + "W");
-            return;
-        }
-
-        // Ennakoiva yöraja
-        if (onPorssariAika() && maxV > YO_YLIKUORMA) {
-            if (tilat.lattia)        asetaKuorma(LATTIA,  false, "Yö-ylikuorma " + Math.round(maxV) + "W");
-            else if (tilat.varaaja)  asetaKuorma(VARAAJA, false, "Yö-ylikuorma " + Math.round(maxV) + "W");
-        }
-    });
-}
-
-// ============================================================
-// AURINKO-OHJAUS + AIKASIIRTYMÄT – 30 s välein
-// ============================================================
-function aurinkoOhjaus() {
+function paaSilmukka() {
     tarkistaPaivanVaihto();
 
     var tilat = haeTilat();
     if (!tilat) return;
 
     var minNyt = nytMinuutteina();
+
+    // --- 1) AIKASIIRTYMÄT (eivät tarvitse mittaria) ---
 
     // Iltanollaus klo 21:45
     if (minNyt >= ILTANOLLAUS_MIN && minNyt < PORSSARI_ALKU_MIN && !iltanollausTehty) {
@@ -161,17 +137,35 @@ function aurinkoOhjaus() {
         return;
     }
 
-    // Pörssäri-aikana (21:45–07:00) ei muuta kuin turvavalvonta
-    if (minNyt >= ILTANOLLAUS_MIN || minNyt < PORSSARI_LOPPU_MIN) return;
-
-    // Aurinko-ohjaus klo 07:00–21:30
+    // --- 2) YKSI MITTAUS: turva + aurinko samasta datasta ---
     Shelly.call("HTTP.GET", { url: "http://" + MITTARIN_IP + "/rpc/EM.GetStatus?id=0" },
     function(res, err) {
-        if (err !== 0 || !res || res.code !== 200) return;
-
+        if (err !== 0 || !res || res.code !== 200) {
+            mittariVirheet++;
+            print("Mittarivirhe " + mittariVirheet + "/" + MAX_VIRHEET);
+            if (mittariVirheet >= MAX_VIRHEET) sammutaKaikki("Mittari ei vastaa");
+            return;
+        }
+        mittariVirheet = 0;
         var data         = JSON.parse(res.body);
         var maxV         = Math.max(data.a_act_power, data.b_act_power, data.c_act_power);
         var kokonaisteho = data.total_act_power;
+
+        logitaMuutos(tilat);
+
+        // --- 3) TURVALOGIIKKA ENSIN ---
+
+        // Siirtoraja: lattia ensin pois (varaaja jää lämmittämään vettä)
+        if (maxV > VAIHE_TEHORAJA) {
+            if (tilat.lattia)        asetaKuorma(LATTIA,  false, "Siirtoraja " + Math.round(maxV) + "W");
+            else if (tilat.varaaja)  asetaKuorma(VARAAJA, false, "Siirtoraja " + Math.round(maxV) + "W");
+            return;
+        }
+
+        // --- 4) AURINKO-OHJAUS ---
+
+        // Pörssäri-aikana (21:45–07:00) ei muuta kuin turvavalvonta
+        if (minNyt >= ILTANOLLAUS_MIN || minNyt < PORSSARI_LOPPU_MIN) return;
 
         // Käynnistys vain klo 07:00–21:30, varaaja ensin
         if (voiKaynnistaaAuringolla()) {
@@ -192,10 +186,9 @@ function aurinkoOhjaus() {
 // ============================================================
 // KÄYNNISTYS
 // ============================================================
-print("Aurinko-ohjaus + turvalogiikka käynnistyy");
+print("Aurinko-ohjaus + turvalogiikka v2 käynnistyy (yksi mittaus/kierros)");
 print("Aurinko: 07:00-21:30 | Iltanollaus: 21:45 | Aamunollaus: 07:00");
 print("Pörssäri (HA) ohjaa: 22:00-07:00");
 print("Vaiheraja: " + VAIHE_TEHORAJA + " W");
 
-Timer.set(30000, true, turvaValvonta);
-Timer.set(30000, true, aurinkoOhjaus);
+Timer.set(30000, true, paaSilmukka);
