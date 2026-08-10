@@ -1,7 +1,7 @@
 # ============================================================
 # Home Assistant – automaatiot
 # Shelly Pro 2 (varaaja = output_0, lattia = output_1)
-# Shelly Pro 3 EM (192.168.3.27, MAC 14335cc59f6c) mittaus
+# Shelly Pro 3 EM (<shelly-3em-ip>) mittaus
 #
 # Kuormanohjauksen kokonaisuus:
 #   - Shelly-skripti (aurinko-ohjaus.js) hoitaa aurinko-ohjauksen,
@@ -23,8 +23,8 @@
   triggers:
     - trigger: state
       entity_id:
-        - switch.shellypro2_ec626088bcb0_output_0
-        - switch.shellypro2_ec626088bcb0_output_1
+        - switch.shellypro2_<mac>_output_0
+        - switch.shellypro2_<mac>_output_1
   conditions: []
   actions:
     - action: telegram_bot.send_message
@@ -39,17 +39,17 @@
   alias: Lattia_pois
   description: ""
   triggers:
-    - device_id: b398d0ce8be7c0c43f1120abded60100
+    - device_id: <device_id_ilmalampopumppu>
       domain: climate
-      entity_id: bb4e5c03484c9fed9ae1929412494406
+      entity_id: <entity_id_ilmalampopumppu>
       type: hvac_mode_changed
       trigger: device
       to: cool
   conditions: []
   actions:
     - type: turn_off
-      device_id: f759a795c1e044e94db06f84ff016e61
-      entity_id: 4a94c59c08d1fd33b85e3553cc6b53bc
+      device_id: <device_id_lattia_switch>
+      entity_id: <entity_id_lattia_switch>
       domain: switch
   mode: single
 
@@ -57,17 +57,17 @@
   alias: Lattia_pois_automaatio_loppuu
   description: ""
   triggers:
-    - device_id: b398d0ce8be7c0c43f1120abded60100
+    - device_id: <device_id_ilmalampopumppu>
       domain: climate
-      entity_id: bb4e5c03484c9fed9ae1929412494406
+      entity_id: <entity_id_ilmalampopumppu>
       type: hvac_mode_changed
       trigger: device
       to: heat
   conditions: []
   actions:
     - type: turn_on
-      device_id: f759a795c1e044e94db06f84ff016e61
-      entity_id: 4a94c59c08d1fd33b85e3553cc6b53bc
+      device_id: <device_id_lattia_switch>
+      entity_id: <entity_id_lattia_switch>
       domain: switch
   mode: single
 
@@ -77,16 +77,16 @@
   triggers:
     - trigger: state
       entity_id:
-        - switch.shellypro2_ec626088bcb0_output_0
+        - switch.shellypro2_<mac>_output_0
   conditions: []
   actions:
     - action: telegram_bot.send_message
       data:
         entity_id:
-          - notify.shelly_juha_jarvi_8260789652
+          - notify.<telegram_target>
         message:
-          "Vesivaraaja: {{ 'päällä' if is_state('switch.shellypro2_ec626088bcb0_output_0',
-          'on') else 'pois' if is_state('switch.shellypro2_ec626088bcb0_output_0',
+          "Vesivaraaja: {{ 'päällä' if is_state('switch.shellypro2_<mac>_output_0',
+          'on') else 'pois' if is_state('switch.shellypro2_<mac>_output_0',
           'off') else 'yhteysvirhe' }}.
 
           "
@@ -99,16 +99,16 @@
   triggers:
     - trigger: state
       entity_id:
-        - switch.shellypro2_ec626088bcb0_output_1
+        - switch.shellypro2_<mac>_output_1
   conditions: []
   actions:
     - action: telegram_bot.send_message
       data:
         entity_id:
-          - notify.shelly_juha_jarvi_8260789652
+          - notify.<telegram_target>
         message:
-          "Lattialämmitys: {{ 'päällä' if is_state('switch.shellypro2_ec626088bcb0_output_1',
-          'on') else 'pois' if is_state('switch.shellypro2_ec626088bcb0_output_1',
+          "Lattialämmitys: {{ 'päällä' if is_state('switch.shellypro2_<mac>_output_1',
+          'on') else 'pois' if is_state('switch.shellypro2_<mac>_output_1',
           'off') else 'yhteysvirhe' }}.
 
           "
@@ -122,8 +122,8 @@
     päällä
   triggers:
     - type: temperature
-      device_id: f07399bec9a50f4d1c4f9e170164132a
-      entity_id: 26e633682250e17529fbca893b9be50c
+      device_id: <device_id_lampotila_anturi>
+      entity_id: <entity_id_lampotila_anturi>
       domain: sensor
       trigger: device
       above: 25
@@ -131,8 +131,8 @@
         minutes: 3
       id: liian_kuuma
     - type: temperature
-      device_id: f07399bec9a50f4d1c4f9e170164132a
-      entity_id: 26e633682250e17529fbca893b9be50c
+      device_id: <device_id_lampotila_anturi>
+      entity_id: <entity_id_lampotila_anturi>
       domain: sensor
       trigger: device
       below: 24
@@ -149,15 +149,15 @@
               entity_id: input_boolean.takka_paalla
               state: "off"
           sequence:
-            - device_id: b398d0ce8be7c0c43f1120abded60100
+            - device_id: <device_id_ilmalampopumppu>
               domain: climate
-              entity_id: bb4e5c03484c9fed9ae1929412494406
+              entity_id: <entity_id_ilmalampopumppu>
               type: set_hvac_mode
               hvac_mode: cool
             - action: telegram_bot.send_message
               data:
                 entity_id:
-                  - notify.mitsubishi_juha_jarvi
+                  - notify.<telegram_target>
                 message: "Jäähdytys päälle: olohuone ylitti 25°C.
 
                   "
@@ -165,21 +165,21 @@
             - condition: trigger
               id: tarpeeksi_viilea
             - condition: device
-              device_id: b398d0ce8be7c0c43f1120abded60100
+              device_id: <device_id_ilmalampopumppu>
               domain: climate
-              entity_id: bb4e5c03484c9fed9ae1929412494406
+              entity_id: <entity_id_ilmalampopumppu>
               type: is_hvac_mode
               hvac_mode: cool
           sequence:
-            - device_id: b398d0ce8be7c0c43f1120abded60100
+            - device_id: <device_id_ilmalampopumppu>
               domain: climate
-              entity_id: bb4e5c03484c9fed9ae1929412494406
+              entity_id: <entity_id_ilmalampopumppu>
               type: set_hvac_mode
               hvac_mode: heat
             - action: telegram_bot.send_message
               data:
                 entity_id:
-                  - notify.mitsubishi_juha_jarvi
+                  - notify.<telegram_target>
                 message: "Lämmitys takaisin: olohuone alitti 24°C.
 
                   "
@@ -206,14 +206,14 @@
           sequence:
             - action: switch.turn_on
               target:
-                entity_id: switch.shellypro2_ec626088bcb0_output_0
+                entity_id: switch.shellypro2_<mac>_output_0
         - conditions:
             - condition: trigger
               id: kytke_pois
           sequence:
             - action: switch.turn_off
               target:
-                entity_id: switch.shellypro2_ec626088bcb0_output_0
+                entity_id: switch.shellypro2_<mac>_output_0
   mode: single
 
 - id: 87c4a2cc058943bdb34d7197793d5427
@@ -237,14 +237,14 @@
           sequence:
             - action: switch.turn_on
               target:
-                entity_id: switch.shellypro2_ec626088bcb0_output_1
+                entity_id: switch.shellypro2_<mac>_output_1
         - conditions:
             - condition: trigger
               id: kytke_pois
           sequence:
             - action: switch.turn_off
               target:
-                entity_id: switch.shellypro2_ec626088bcb0_output_1
+                entity_id: switch.shellypro2_<mac>_output_1
   mode: single
 
 - id: 1d583d7301e34500bb09f53244f72cb4
@@ -258,23 +258,23 @@
       entity_id: sensor.porssari_channel_2_state
       state: "1"
     - condition: state
-      entity_id: switch.shellypro2_ec626088bcb0_output_1
+      entity_id: switch.shellypro2_<mac>_output_1
       state: "off"
       for:
         minutes: 5
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_a_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_a_teho
       below: 4000
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_b_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_b_teho
       below: 4000
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_c_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_c_teho
       below: 4000
   actions:
     - action: switch.turn_on
       target:
-        entity_id: switch.shellypro2_ec626088bcb0_output_1
+        entity_id: switch.shellypro2_<mac>_output_1
   mode: single
 
 - id: 7020ee9454a14a7fb98315907c55399a
@@ -292,21 +292,21 @@
       entity_id: sensor.porssari_channel_1_state
       state: "1"
     - condition: state
-      entity_id: switch.shellypro2_ec626088bcb0_output_0
+      entity_id: switch.shellypro2_<mac>_output_0
       state: "off"
       for:
         minutes: 5
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_a_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_a_teho
       below: 4500
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_b_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_b_teho
       below: 4500
     - condition: numeric_state
-      entity_id: sensor.shellypro3em_14335cc59f6c_phase_c_teho
+      entity_id: sensor.shellypro3em_<mac>_phase_c_teho
       below: 4500
   actions:
     - action: switch.turn_on
       target:
-        entity_id: switch.shellypro2_ec626088bcb0_output_0
+        entity_id: switch.shellypro2_<mac>_output_0
   mode: single
