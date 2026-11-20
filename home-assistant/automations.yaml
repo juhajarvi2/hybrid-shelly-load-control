@@ -10,6 +10,9 @@
 #   - Palautusautomaatiot kytkevät kuorman takaisin, jos turvalogiikka
 #     sammutti sen mutta pörssäri haluaa sen yhä päälle ja vaihekuorma
 #     on laskenut turvalliselle tasolle
+#   - Syke-automaatio kertoo V6-skriptille minuutin välein, että
+#     Pörssäri-ohjaus on elossa. Jos syke puuttuu 15 min, skripti
+#     siirtyy autonomiseen yötilaan (ks. rest.yaml ja aurinko-ohjaus.js)
 #
 # Palautusrajat ovat kuormakohtaiset (per vaihe):
 #   varaaja < 4500 W  (varaaja lisää ~1 kW/vaihe → 5750−1000−250)
@@ -309,4 +312,25 @@
     - action: switch.turn_on
       target:
         entity_id: switch.shellypro2_<mac>_output_0
+  mode: single
+
+- id: shelly_syke_porssari_elossa
+  alias: Shelly syke – Pörssäri-ohjaus elossa
+  description: >
+    Kutsuu Shellyn V6-skriptin syke-osoitetta minuutin välein, kun
+    Pörssäri-aikataulu on voimassa ja kanavat 1 ja 2 antavat tilan 0/1.
+    Kun ehto ei täyty 15 min, Shelly siirtyy autonomiseen yötilaan.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+  conditions:
+    - condition: state
+      entity_id: binary_sensor.porssari_json_controls
+      state: "on"
+    - condition: template
+      value_template: >
+        {{ states('sensor.porssari_channel_1_state') in ['0', '1']
+           and states('sensor.porssari_channel_2_state') in ['0', '1'] }}
+  actions:
+    - action: rest_command.shelly_syke
   mode: single

@@ -1,0 +1,51 @@
+# ============================================================
+# Home Assistant – V6-skriptin HTTP-rajapinta (configuration.yaml)
+# ============================================================
+#
+# Liitä nämä configuration.yaml:iin (tai omaan packageen).
+# Salasana luetaan secrets.yaml:sta: shelly_pro2_pw: <salasana>
+#
+# <shelly-pro2-ip>  Shelly Pro 2:n IP
+# /script/6/...     6 = skriptin slot-id Pro 2:lla. Tarkista omasi:
+#                   skripti tulostaa käynnistyessään polut konsoliin
+#                   ("Syke-osoite: ...  Tila-osoite: ...").
+#
+# Shelly vaatii digest-tunnistuksen, kun laitteelle on asetettu
+# salasana. Ilman sitä kutsu saa 401:n, ja toistuvat epäonnistuneet
+# tunnistukset johtavat Shellyn kuristukseen (HTTP 429), jolloin
+# myös syke katkeaa ja V6 siirtyy turhaan autonomiseen tilaan.
+# ============================================================
+
+rest_command:
+  # Automaatio "Shelly syke – Pörssäri-ohjaus elossa" kutsuu tätä
+  # minuutin välein (automations.yaml).
+  shelly_syke:
+    url: "http://<shelly-pro2-ip>/script/6/syke"
+    method: get
+    timeout: 5
+    authentication: digest
+    username: admin
+    password: !secret shelly_pro2_pw
+
+# Diagnostiikka: V6:n /tila-JSONin laskurit HA-sensoreiksi (5 min välein).
+# Laskurit nollautuvat, kun skripti käynnistyy uudelleen.
+rest:
+  - resource: http://<shelly-pro2-ip>/script/6/tila
+    scan_interval: 300
+    authentication: digest
+    username: admin
+    password: !secret shelly_pro2_pw
+    sensor:
+      - name: "V6 turvapudotuksia"
+        value_template: "{{ value_json.turvapudotuksia }}"
+      - name: "V6 autoKertaa"
+        value_template: "{{ value_json.autoKertaa }}"
+      - name: "V6 yoKertaa"
+        value_template: "{{ value_json.yoKertaa }}"
+      - name: "V6 mittarikatkoja"
+        value_template: "{{ value_json.mittarikatkoja }}"
+      - name: "V6 sykeIkaS"
+        value_template: "{{ value_json.sykeIkaS }}"
+    binary_sensor:
+      - name: "V6 autonominen"
+        value_template: "{{ value_json.autonominen }}"
